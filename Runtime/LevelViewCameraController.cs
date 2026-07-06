@@ -7,7 +7,7 @@ using UnityEditor;
 #endif
 
 [DisallowMultipleComponent]
-[RequireComponent(typeof(Camera))]
+[RequireComponent(typeof(Camera), typeof(CharacterController))]
 public class LevelViewCameraController : MonoBehaviour
 {
     public enum HeightPreset
@@ -41,8 +41,6 @@ public class LevelViewCameraController : MonoBehaviour
     public bool showGizmos = true;
 
     private CharacterController characterController;
-    private Transform movementRoot;
-    private GameObject runtimeRig;
     private Vector3 initialPosition;
     private Quaternion initialRotation;
     private bool hasInitialState;
@@ -227,7 +225,6 @@ public class LevelViewCameraController : MonoBehaviour
         currentEyeHeight = eyeHeight;
         currentSpeed = 0f;
         verticalVelocity = 0f;
-        movementRoot = transform;
 
         if (useCollision)
         {
@@ -292,30 +289,20 @@ public class LevelViewCameraController : MonoBehaviour
 
         float targetSpeed = ReadSprintHeld() ? sprintSpeed : walkSpeed;
         Vector3 velocity = move * targetSpeed;
-        GetMovementRoot().position += velocity * Time.deltaTime;
+        transform.position += velocity * Time.deltaTime;
         currentSpeed = velocity.magnitude;
     }
 
     private void EnsureCharacterController()
     {
-        if (movementRoot == null)
+        if (characterController == null)
         {
-            movementRoot = transform;
-        }
-
-        if (movementRoot == transform)
-        {
-            CreateRuntimeRig();
+            characterController = GetComponent<CharacterController>();
         }
 
         if (characterController == null)
         {
-            characterController = movementRoot.GetComponent<CharacterController>();
-        }
-
-        if (characterController == null)
-        {
-            characterController = movementRoot.gameObject.AddComponent<CharacterController>();
+            characterController = gameObject.AddComponent<CharacterController>();
         }
 
         if (!characterController.enabled)
@@ -326,38 +313,11 @@ public class LevelViewCameraController : MonoBehaviour
         ApplyCharacterControllerSettings(CurrentBodyHeight);
     }
 
-    private void CreateRuntimeRig()
-    {
-        Vector3 footPosition = GetFootPosition(transform.position, currentEyeHeight);
-        Transform originalParent = transform.parent;
-
-        runtimeRig = new GameObject(gameObject.name + " Level View Runtime Rig");
-        runtimeRig.hideFlags = HideFlags.DontSave;
-        movementRoot = runtimeRig.transform;
-        movementRoot.SetParent(originalParent, true);
-        movementRoot.SetPositionAndRotation(footPosition, Quaternion.Euler(0f, yaw, 0f));
-
-        CharacterController cameraController = GetComponent<CharacterController>();
-        if (cameraController != null)
-        {
-            cameraController.enabled = false;
-        }
-
-        transform.SetParent(movementRoot, true);
-        SetCameraLocalPose(currentEyeHeight);
-    }
-
     private void DisableCollisionControllers()
     {
         if (characterController != null && characterController.enabled)
         {
             characterController.enabled = false;
-        }
-
-        CharacterController cameraController = GetComponent<CharacterController>();
-        if (cameraController != null && cameraController.enabled)
-        {
-            cameraController.enabled = false;
         }
     }
 
@@ -371,7 +331,7 @@ public class LevelViewCameraController : MonoBehaviour
         float capsuleHeight = Mathf.Max(activeBodyHeight, ControllerRadius * 2f + 0.01f);
         characterController.height = capsuleHeight;
         characterController.radius = ControllerRadius;
-        characterController.center = new Vector3(0f, capsuleHeight * 0.5f, 0f);
+        characterController.center = new Vector3(0f, (capsuleHeight * 0.5f) - CurrentEyeHeight, 0f);
     }
 
     private void ApplyBodyHeight(float targetBodyHeight)
@@ -385,29 +345,11 @@ public class LevelViewCameraController : MonoBehaviour
             return;
         }
 
-        if (movementRoot != null && movementRoot != transform)
-        {
-            SetCameraLocalPose(targetEyeHeight);
-        }
-        else
-        {
-            Vector3 footPosition = GetFootPosition(transform.position, currentEyeHeight);
-            transform.position = footPosition + Vector3.up * targetEyeHeight;
-        }
+        Vector3 footPosition = GetFootPosition(transform.position, currentEyeHeight);
+        transform.position = footPosition + Vector3.up * targetEyeHeight;
 
         currentBodyHeight = targetBodyHeight;
         currentEyeHeight = targetEyeHeight;
-    }
-
-    private void SetCameraLocalPose(float activeEyeHeight)
-    {
-        transform.localPosition = Vector3.up * activeEyeHeight;
-        transform.localRotation = Quaternion.Euler(pitch, 0f, 0f);
-    }
-
-    private Transform GetMovementRoot()
-    {
-        return movementRoot != null ? movementRoot : transform;
     }
 
     private Vector3 GetPlanarMoveDirection(Vector2 input)
@@ -429,15 +371,7 @@ public class LevelViewCameraController : MonoBehaviour
 
     private void ApplyViewRotation()
     {
-        if (movementRoot != null && movementRoot != transform)
-        {
-            movementRoot.rotation = Quaternion.Euler(0f, yaw, 0f);
-            transform.localRotation = Quaternion.Euler(pitch, 0f, 0f);
-        }
-        else
-        {
-            transform.rotation = Quaternion.Euler(pitch, yaw, 0f);
-        }
+        transform.rotation = Quaternion.Euler(pitch, yaw, 0f);
     }
 
     private void UpdateCursorLock()
@@ -478,16 +412,7 @@ public class LevelViewCameraController : MonoBehaviour
         currentBodyHeight = bodyHeight;
         currentEyeHeight = eyeHeight;
 
-        if (movementRoot != null && movementRoot != transform)
-        {
-            Vector3 footPosition = GetFootPosition(initialPosition, currentEyeHeight);
-            movementRoot.SetPositionAndRotation(footPosition, Quaternion.Euler(0f, yaw, 0f));
-            SetCameraLocalPose(currentEyeHeight);
-        }
-        else
-        {
-            transform.SetPositionAndRotation(initialPosition, initialRotation);
-        }
+        transform.SetPositionAndRotation(initialPosition, initialRotation);
 
         verticalVelocity = 0f;
         currentSpeed = 0f;
