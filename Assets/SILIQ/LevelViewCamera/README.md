@@ -1,0 +1,132 @@
+# SILIQ Level View Camera
+
+SILIQ Level View Camera は、Unity標準機能だけでプレイヤー目線のサイズ感を確認するためのレベルデザイン補助ツールです。
+
+VRChat SDK、VCC、Udon、VRCSceneDescriptor、VRCPlayerApi などには依存しません。VRChat本体やSDKの挙動を再現するものではなく、ワールド制作中に「この高さ・幅・距離がプレイヤー目線でどう見えるか」を素早く確認するためのツールです。
+
+アバターは不要です。基本はCameraだけを一人称視点として動かします。シーン内にアバターモデルを置く使い方は、見た目の比較や展示確認のための任意オプションです。
+
+## 対象環境
+
+- Unity 2022.3 LTS
+- Unity 6 LTS / Unity 6000.x 系
+- macOS上のUnity Editor
+- Built-in Render Pipeline / URP / HDRP
+- VRChat SDKなし
+- VCCなし
+- Udonなし
+- New Input Systemなし
+- 外部Packageなし
+
+## 導入方法
+
+1. `Assets/SILIQ/LevelViewCamera` フォルダをUnityプロジェクトの `Assets` 配下に配置します。
+2. Unity Editorでプロジェクトを開きます。
+3. Compileが完了したら、任意のCameraを選択します。
+4. `LevelViewCameraController` をCameraにアタッチします。
+
+PrefabやAssembly Definitionは不要です。
+アバターPrefabも不要です。
+
+## Cameraへのアタッチ方法
+
+1. Hierarchyで確認用に使うCameraを選択します。
+2. Inspectorで `Add Component` を押します。
+3. `Level View Camera Controller` を追加します。
+4. 必要に応じて `Height Preset`、移動速度、Collision設定、Gizmo表示を調整します。
+5. Play Modeに入ると操作できます。
+
+Edit Mode中は操作せず、Scene View上のGizmo表示だけを行います。
+
+## 操作方法
+
+| 操作 | 内容 |
+| --- | --- |
+| W / A / S / D | 水平移動 |
+| Mouse | 視点回転 |
+| Space | ジャンプ、Collision OFF時は上昇 |
+| Left Shift | 高速移動 |
+| Left Ctrl | しゃがみ、Collision OFF時は下降 |
+| R | 初期位置と初期回転に戻る |
+| Esc | マウスロック解除 |
+| Left Click | マウスロック再開 |
+
+入力はUnity標準の旧Input Managerを使用します。New Input Systemは不要です。
+
+## 身長プリセット
+
+| Preset | Eye Height |
+| --- | ---: |
+| Small Avatar | 1.00m |
+| Seated | 1.20m |
+| Short Avatar | 1.40m |
+| Average VRChat Avatar | 1.60m |
+| Tall Avatar | 1.80m |
+| Custom | 任意 |
+
+`eyeHeight` は床からCameraまでの高さです。Unityでは `1 unit = 1 meter` として扱います。
+
+Presetを選ぶと `eyeHeight` が自動で更新されます。`Custom` の場合のみ、`eyeHeight` を自由に入力できます。
+
+## Collision ON / OFF の違い
+
+### Collision ON
+
+`useCollision = true` の場合、`CharacterController` を使って移動します。
+
+- Cameraに `CharacterController` がない場合はPlay Mode中に自動追加します。
+- 壁や段差に衝突します。
+- 重力と接地判定を使用します。
+- Spaceでジャンプします。
+- Left Ctrlでしゃがみます。
+- カプセルの半径は `0.3m` です。
+- カプセルの高さは `eyeHeight + 0.2m` です。
+
+### Collision OFF
+
+`useCollision = false` の場合、Transform移動で動作します。
+
+- 壁や床を無視して移動できます。
+- 重力は使いません。
+- Spaceで上昇します。
+- Left Ctrlで下降します。
+- Shiftで高速移動します。
+- シーン全体を素早く空間確認したい場合に向いています。
+
+## VRChat SDKに依存しないこと
+
+このツールは以下を使用しません。
+
+- VRChat SDK
+- VCC
+- Udon
+- VRCSDK
+- VRCSceneDescriptor
+- VRCPlayerApi
+- VRCObjectSync
+- VRChat用Prefab
+- VRChat用Assembly Definition
+- 外部Package
+
+主に使用するAPIは `UnityEngine`、`UnityEditor`、`MonoBehaviour`、`Transform`、`Camera`、`CharacterController`、`Input`、`Gizmos`、`Handles`、`CustomEditor`、`EditorGUILayout` です。
+
+## このツールで確認できること
+
+- 部屋に入った時の目線
+- 天井の高さ
+- 通路の圧迫感
+- 展示物の見え方
+- ドアや入口の幅
+- 階段や段差の感覚
+- 座り視点と立ち視点の違い
+- 小さいアバターと高身長アバターの見え方
+
+## このツールで確認できないこと
+
+- VRChat本体と完全に同じ移動挙動
+- 実際のVRアバターの手や頭の動き
+- VRChat SDKのアップロード可否
+- Udonギミック
+- ネットワーク同期
+- Quest/iOS実機の正確な負荷
+- 他ユーザーが入った時の見え方
