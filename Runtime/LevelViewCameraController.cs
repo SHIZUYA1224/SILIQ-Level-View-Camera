@@ -23,6 +23,7 @@ public class LevelViewCameraController : MonoBehaviour
     private const float ControllerRadius = 0.3f;
     private const float EyeOffsetFromTop = 0.1f;
     private const float DefaultCrouchBodyHeightRatio = 0.75f;
+    private const float DefaultInputSystemMouseScale = 0.03f;
     private const float MinBodyHeight = 0.4f;
     private const float MinEyeHeight = 0.2f;
 
@@ -36,6 +37,8 @@ public class LevelViewCameraController : MonoBehaviour
     [Min(0f)] public float sprintSpeed = 4.0f;
     [Min(0f)] public float jumpHeight = 0.5f;
     [Min(0.01f)] public float mouseSensitivity = 2.0f;
+    [Min(0.001f)] public float inputSystemMouseScale = 0.03f;
+    public bool invertMouseY;
     [Min(0.01f)] public float gravity = 9.81f;
     public bool useCollision = true;
     public bool showGizmos = true;
@@ -54,7 +57,6 @@ public class LevelViewCameraController : MonoBehaviour
     private bool isMouseLocked;
 
 #if !ENABLE_LEGACY_INPUT_MANAGER && ENABLE_INPUT_SYSTEM
-    private const float InputSystemMouseDeltaScale = 0.05f;
     private static bool inputSystemReflectionInitialized;
     private static Type inputSystemKeyboardType;
     private static Type inputSystemMouseType;
@@ -364,7 +366,7 @@ public class LevelViewCameraController : MonoBehaviour
     {
         Vector2 lookInput = ReadLookInput();
         yaw += lookInput.x * mouseSensitivity;
-        pitch -= lookInput.y * mouseSensitivity;
+        pitch += lookInput.y * mouseSensitivity * (invertMouseY ? 1f : -1f);
         pitch = Mathf.Clamp(pitch, -89f, 89f);
         ApplyViewRotation();
     }
@@ -462,6 +464,7 @@ public class LevelViewCameraController : MonoBehaviour
         sprintSpeed = Mathf.Max(walkSpeed, sprintSpeed);
         jumpHeight = Mathf.Max(0f, jumpHeight);
         mouseSensitivity = Mathf.Max(0.01f, mouseSensitivity);
+        inputSystemMouseScale = inputSystemMouseScale > 0f ? Mathf.Max(0.001f, inputSystemMouseScale) : DefaultInputSystemMouseScale;
         gravity = Mathf.Max(0.01f, gravity);
     }
 
@@ -481,7 +484,7 @@ public class LevelViewCameraController : MonoBehaviour
 #if ENABLE_LEGACY_INPUT_MANAGER
         return new Vector2(Input.GetAxis("Mouse X"), Input.GetAxis("Mouse Y"));
 #elif ENABLE_INPUT_SYSTEM
-        return ReadInputSystemMouseDelta() * InputSystemMouseDeltaScale;
+        return ReadInputSystemMouseDelta() * inputSystemMouseScale;
 #else
         return Vector2.zero;
 #endif

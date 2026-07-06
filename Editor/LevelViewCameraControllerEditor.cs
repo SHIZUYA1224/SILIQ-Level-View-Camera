@@ -24,6 +24,8 @@ public class LevelViewCameraControllerEditor : Editor
     private SerializedProperty sprintSpeed;
     private SerializedProperty jumpHeight;
     private SerializedProperty mouseSensitivity;
+    private SerializedProperty inputSystemMouseScale;
+    private SerializedProperty invertMouseY;
     private SerializedProperty gravity;
     private SerializedProperty useCollision;
     private SerializedProperty showGizmos;
@@ -39,6 +41,8 @@ public class LevelViewCameraControllerEditor : Editor
         sprintSpeed = serializedObject.FindProperty("sprintSpeed");
         jumpHeight = serializedObject.FindProperty("jumpHeight");
         mouseSensitivity = serializedObject.FindProperty("mouseSensitivity");
+        inputSystemMouseScale = serializedObject.FindProperty("inputSystemMouseScale");
+        invertMouseY = serializedObject.FindProperty("invertMouseY");
         gravity = serializedObject.FindProperty("gravity");
         useCollision = serializedObject.FindProperty("useCollision");
         showGizmos = serializedObject.FindProperty("showGizmos");
@@ -137,8 +141,13 @@ public class LevelViewCameraControllerEditor : Editor
         EditorGUILayout.PropertyField(walkSpeed, new GUIContent("Walk Speed"));
         EditorGUILayout.PropertyField(sprintSpeed, new GUIContent("Sprint Speed"));
         EditorGUILayout.PropertyField(jumpHeight, new GUIContent("Jump Height"));
-        EditorGUILayout.PropertyField(mouseSensitivity, new GUIContent("Mouse Sensitivity"));
         EditorGUILayout.PropertyField(gravity, new GUIContent("Gravity"));
+
+        EditorGUILayout.Space(6f);
+        EditorGUILayout.LabelField("Look", EditorStyles.boldLabel);
+        EditorGUILayout.PropertyField(mouseSensitivity, new GUIContent("Mouse Sensitivity"));
+        EditorGUILayout.PropertyField(inputSystemMouseScale, new GUIContent("Input System Mouse Scale"));
+        EditorGUILayout.PropertyField(invertMouseY, new GUIContent("Invert Mouse Y"));
     }
 
     private void DrawCollisionSection()
