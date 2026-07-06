@@ -1,3 +1,5 @@
+using System;
+using System.Reflection;
 using UnityEngine;
 
 #if UNITY_EDITOR
@@ -52,6 +54,15 @@ public class LevelViewCameraController : MonoBehaviour
     private float currentSpeed;
     private bool isGrounded;
     private bool isMouseLocked;
+
+#if !ENABLE_LEGACY_INPUT_MANAGER && ENABLE_INPUT_SYSTEM
+    private const float InputSystemMouseDeltaScale = 0.05f;
+    private static bool inputSystemReflectionInitialized;
+    private static Type inputSystemKeyboardType;
+    private static Type inputSystemMouseType;
+    private static PropertyInfo inputSystemKeyboardCurrentProperty;
+    private static PropertyInfo inputSystemMouseCurrentProperty;
+#endif
 
     public HeightPreset Preset
     {
@@ -531,48 +542,253 @@ public class LevelViewCameraController : MonoBehaviour
 
     private Vector2 ReadMoveInput()
     {
+#if ENABLE_LEGACY_INPUT_MANAGER
         return new Vector2(Input.GetAxis("Horizontal"), Input.GetAxis("Vertical"));
+#elif ENABLE_INPUT_SYSTEM
+        return ReadInputSystemMoveInput();
+#else
+        return Vector2.zero;
+#endif
     }
 
     private Vector2 ReadLookInput()
     {
+#if ENABLE_LEGACY_INPUT_MANAGER
         return new Vector2(Input.GetAxis("Mouse X"), Input.GetAxis("Mouse Y"));
+#elif ENABLE_INPUT_SYSTEM
+        return ReadInputSystemMouseDelta() * InputSystemMouseDeltaScale;
+#else
+        return Vector2.zero;
+#endif
     }
 
     private bool ReadJumpPressed()
     {
+#if ENABLE_LEGACY_INPUT_MANAGER
         return Input.GetKeyDown(KeyCode.Space);
+#elif ENABLE_INPUT_SYSTEM
+        return ReadInputSystemKeyPressedThisFrame("spaceKey");
+#else
+        return false;
+#endif
     }
 
     private bool ReadJumpHeld()
     {
+#if ENABLE_LEGACY_INPUT_MANAGER
         return Input.GetKey(KeyCode.Space);
+#elif ENABLE_INPUT_SYSTEM
+        return ReadInputSystemKeyHeld("spaceKey");
+#else
+        return false;
+#endif
     }
 
     private bool ReadSprintHeld()
     {
+#if ENABLE_LEGACY_INPUT_MANAGER
         return Input.GetKey(KeyCode.LeftShift);
+#elif ENABLE_INPUT_SYSTEM
+        return ReadInputSystemKeyHeld("leftShiftKey");
+#else
+        return false;
+#endif
     }
 
     private bool ReadCrouchHeld()
     {
+#if ENABLE_LEGACY_INPUT_MANAGER
         return Input.GetKey(KeyCode.LeftControl);
+#elif ENABLE_INPUT_SYSTEM
+        return ReadInputSystemKeyHeld("leftCtrlKey");
+#else
+        return false;
+#endif
     }
 
     private bool ReadResetPressed()
     {
+#if ENABLE_LEGACY_INPUT_MANAGER
         return Input.GetKeyDown(KeyCode.R);
+#elif ENABLE_INPUT_SYSTEM
+        return ReadInputSystemKeyPressedThisFrame("rKey");
+#else
+        return false;
+#endif
     }
 
     private bool ReadUnlockMousePressed()
     {
+#if ENABLE_LEGACY_INPUT_MANAGER
         return Input.GetKeyDown(KeyCode.Escape);
+#elif ENABLE_INPUT_SYSTEM
+        return ReadInputSystemKeyPressedThisFrame("escapeKey");
+#else
+        return false;
+#endif
     }
 
     private bool ReadLockMousePressed()
     {
+#if ENABLE_LEGACY_INPUT_MANAGER
         return Input.GetMouseButtonDown(0);
+#elif ENABLE_INPUT_SYSTEM
+        return ReadInputSystemMouseButtonPressedThisFrame("leftButton");
+#else
+        return false;
+#endif
     }
+
+#if !ENABLE_LEGACY_INPUT_MANAGER && ENABLE_INPUT_SYSTEM
+    private static Vector2 ReadInputSystemMoveInput()
+    {
+        object keyboard = GetInputSystemKeyboard();
+        float x = 0f;
+        float y = 0f;
+
+        if (IsInputSystemControlPressed(GetInputSystemControl(keyboard, "aKey")) ||
+            IsInputSystemControlPressed(GetInputSystemControl(keyboard, "leftArrowKey")))
+        {
+            x -= 1f;
+        }
+
+        if (IsInputSystemControlPressed(GetInputSystemControl(keyboard, "dKey")) ||
+            IsInputSystemControlPressed(GetInputSystemControl(keyboard, "rightArrowKey")))
+        {
+            x += 1f;
+        }
+
+        if (IsInputSystemControlPressed(GetInputSystemControl(keyboard, "sKey")) ||
+            IsInputSystemControlPressed(GetInputSystemControl(keyboard, "downArrowKey")))
+        {
+            y -= 1f;
+        }
+
+        if (IsInputSystemControlPressed(GetInputSystemControl(keyboard, "wKey")) ||
+            IsInputSystemControlPressed(GetInputSystemControl(keyboard, "upArrowKey")))
+        {
+            y += 1f;
+        }
+
+        return Vector2.ClampMagnitude(new Vector2(x, y), 1f);
+    }
+
+    private static Vector2 ReadInputSystemMouseDelta()
+    {
+        object mouse = GetInputSystemMouse();
+        return ReadInputSystemVector2Control(GetInputSystemControl(mouse, "delta"));
+    }
+
+    private static bool ReadInputSystemKeyPressedThisFrame(string keyName)
+    {
+        return IsInputSystemControlPressedThisFrame(GetInputSystemControl(GetInputSystemKeyboard(), keyName));
+    }
+
+    private static bool ReadInputSystemKeyHeld(string keyName)
+    {
+        return IsInputSystemControlPressed(GetInputSystemControl(GetInputSystemKeyboard(), keyName));
+    }
+
+    private static bool ReadInputSystemMouseButtonPressedThisFrame(string buttonName)
+    {
+        return IsInputSystemControlPressedThisFrame(GetInputSystemControl(GetInputSystemMouse(), buttonName));
+    }
+
+    private static object GetInputSystemKeyboard()
+    {
+        EnsureInputSystemReflection();
+        return inputSystemKeyboardCurrentProperty != null ? inputSystemKeyboardCurrentProperty.GetValue(null, null) : null;
+    }
+
+    private static object GetInputSystemMouse()
+    {
+        EnsureInputSystemReflection();
+        return inputSystemMouseCurrentProperty != null ? inputSystemMouseCurrentProperty.GetValue(null, null) : null;
+    }
+
+    private static void EnsureInputSystemReflection()
+    {
+        if (inputSystemReflectionInitialized)
+        {
+            return;
+        }
+
+        inputSystemReflectionInitialized = true;
+        inputSystemKeyboardType = Type.GetType("UnityEngine.InputSystem.Keyboard, Unity.InputSystem");
+        inputSystemMouseType = Type.GetType("UnityEngine.InputSystem.Mouse, Unity.InputSystem");
+        inputSystemKeyboardCurrentProperty = inputSystemKeyboardType != null
+            ? inputSystemKeyboardType.GetProperty("current", BindingFlags.Public | BindingFlags.Static)
+            : null;
+        inputSystemMouseCurrentProperty = inputSystemMouseType != null
+            ? inputSystemMouseType.GetProperty("current", BindingFlags.Public | BindingFlags.Static)
+            : null;
+    }
+
+    private static object GetInputSystemControl(object device, string controlName)
+    {
+        if (device == null)
+        {
+            return null;
+        }
+
+        PropertyInfo property = device.GetType().GetProperty(controlName, BindingFlags.Public | BindingFlags.Instance);
+        return property != null ? property.GetValue(device, null) : null;
+    }
+
+    private static bool IsInputSystemControlPressed(object control)
+    {
+        return ReadInputSystemBoolProperty(control, "isPressed");
+    }
+
+    private static bool IsInputSystemControlPressedThisFrame(object control)
+    {
+        return ReadInputSystemBoolProperty(control, "wasPressedThisFrame");
+    }
+
+    private static bool ReadInputSystemBoolProperty(object control, string propertyName)
+    {
+        if (control == null)
+        {
+            return false;
+        }
+
+        PropertyInfo property = control.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
+        if (property == null || property.PropertyType != typeof(bool))
+        {
+            return false;
+        }
+
+        return (bool)property.GetValue(control, null);
+    }
+
+    private static Vector2 ReadInputSystemVector2Control(object control)
+    {
+        if (control == null)
+        {
+            return Vector2.zero;
+        }
+
+        MethodInfo readValue = FindParameterlessMethod(control.GetType(), "ReadValue");
+        object value = readValue != null ? readValue.Invoke(control, null) : null;
+        return value is Vector2 ? (Vector2)value : Vector2.zero;
+    }
+
+    private static MethodInfo FindParameterlessMethod(Type type, string methodName)
+    {
+        while (type != null)
+        {
+            MethodInfo method = type.GetMethod(methodName, BindingFlags.Public | BindingFlags.Instance, null, Type.EmptyTypes, null);
+            if (method != null)
+            {
+                return method;
+            }
+
+            type = type.BaseType;
+        }
+
+        return null;
+    }
+#endif
 
 #if UNITY_EDITOR
     private void OnDrawGizmos()
