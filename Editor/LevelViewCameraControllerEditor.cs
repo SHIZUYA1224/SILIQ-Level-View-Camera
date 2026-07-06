@@ -57,6 +57,7 @@ public class LevelViewCameraControllerEditor : Editor
         DrawMovementSection();
         DrawCollisionSection();
         DrawGizmoSection();
+        DrawEditorNavigationSection();
         DrawCurrentStatusSection();
 
         bool changed = serializedObject.ApplyModifiedProperties();
@@ -164,6 +165,30 @@ public class LevelViewCameraControllerEditor : Editor
         EditorGUILayout.PropertyField(showGizmos, new GUIContent("Show Gizmos"));
     }
 
+    private void DrawEditorNavigationSection()
+    {
+        EditorGUILayout.Space(6f);
+        EditorGUILayout.LabelField("Editor Navigation", EditorStyles.boldLabel);
+
+        LevelViewCameraController controller = target as LevelViewCameraController;
+        if (controller == null)
+        {
+            return;
+        }
+
+        if (GUILayout.Button("Move Scene View To This Camera"))
+        {
+            serializedObject.ApplyModifiedProperties();
+            MoveSceneViewToController(controller);
+        }
+
+        if (GUILayout.Button("Move This Camera To Scene View"))
+        {
+            serializedObject.ApplyModifiedProperties();
+            MoveControllerToSceneView(controller);
+        }
+    }
+
     private void DrawCurrentStatusSection()
     {
         EditorGUILayout.Space(8f);
@@ -205,5 +230,81 @@ public class LevelViewCameraControllerEditor : Editor
     private string FormatVector3(Vector3 value)
     {
         return string.Format("({0:0.00}, {1:0.00}, {2:0.00})", value.x, value.y, value.z);
+    }
+
+    [MenuItem("Tools/SILIQ/Level View Camera/Move Scene View To Selected Camera", false, 2000)]
+    private static void MoveSceneViewToSelectedController()
+    {
+        LevelViewCameraController controller = GetSelectedController();
+        if (controller != null)
+        {
+            MoveSceneViewToController(controller);
+        }
+    }
+
+    [MenuItem("Tools/SILIQ/Level View Camera/Move Scene View To Selected Camera", true)]
+    private static bool ValidateMoveSceneViewToSelectedController()
+    {
+        return GetSelectedController() != null;
+    }
+
+    [MenuItem("Tools/SILIQ/Level View Camera/Move Selected Camera To Scene View", false, 2001)]
+    private static void MoveSelectedControllerToSceneView()
+    {
+        LevelViewCameraController controller = GetSelectedController();
+        if (controller != null)
+        {
+            MoveControllerToSceneView(controller);
+        }
+    }
+
+    [MenuItem("Tools/SILIQ/Level View Camera/Move Selected Camera To Scene View", true)]
+    private static bool ValidateMoveSelectedControllerToSceneView()
+    {
+        return GetSelectedController() != null && GetSceneView() != null;
+    }
+
+    private static LevelViewCameraController GetSelectedController()
+    {
+        GameObject selectedObject = Selection.activeGameObject;
+        return selectedObject != null ? selectedObject.GetComponent<LevelViewCameraController>() : null;
+    }
+
+    private static void MoveSceneViewToController(LevelViewCameraController controller)
+    {
+        SceneView sceneView = GetSceneView();
+        if (sceneView == null || controller == null)
+        {
+            return;
+        }
+
+        sceneView.AlignViewToObject(controller.transform);
+        sceneView.Repaint();
+    }
+
+    private static void MoveControllerToSceneView(LevelViewCameraController controller)
+    {
+        SceneView sceneView = GetSceneView();
+        if (sceneView == null || sceneView.camera == null || controller == null)
+        {
+            return;
+        }
+
+        Transform sceneCamera = sceneView.camera.transform;
+        Undo.RecordObject(controller.transform, "Move Level View Camera To Scene View");
+        controller.transform.SetPositionAndRotation(sceneCamera.position, sceneCamera.rotation);
+        EditorUtility.SetDirty(controller.transform);
+        Selection.activeGameObject = controller.gameObject;
+        SceneView.RepaintAll();
+    }
+
+    private static SceneView GetSceneView()
+    {
+        if (SceneView.lastActiveSceneView != null)
+        {
+            return SceneView.lastActiveSceneView;
+        }
+
+        return EditorWindow.GetWindow<SceneView>();
     }
 }

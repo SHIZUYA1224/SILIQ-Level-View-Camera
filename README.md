@@ -50,6 +50,17 @@ PrefabやAssembly Definitionは不要です。
 
 Edit Mode中は操作せず、Scene View上のGizmo表示だけを行います。
 
+## Editor Navigation
+
+Level View Cameraをシーン内に置きっぱなしにして、視点確認用のブックマークとして使えます。
+
+Cameraを選択するとInspectorに `Editor Navigation` が表示されます。
+
+- `Move Scene View To This Camera`: Scene ViewをこのCamera位置へ移動します。
+- `Move This Camera To Scene View`: このCameraを現在のScene View位置へ移動します。
+
+同じ操作は `Tools > SILIQ > Level View Camera` メニューからも実行できます。複数の確認ポイントにCameraを残しておく場合は、Hierarchyで対象Cameraを選んで `Move Scene View To Selected Camera` を使うとすぐその場所へ移動できます。
+
 ## 操作方法
 
 | 操作 | 内容 |
