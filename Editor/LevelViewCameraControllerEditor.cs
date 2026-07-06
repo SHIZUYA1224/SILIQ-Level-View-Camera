@@ -28,6 +28,7 @@ public class LevelViewCameraControllerEditor : Editor
     private SerializedProperty invertMouseY;
     private SerializedProperty gravity;
     private SerializedProperty useCollision;
+    private SerializedProperty collisionMask;
     private SerializedProperty activateOnPlay;
     private SerializedProperty disableOtherCamerasOnActivate;
     private SerializedProperty activeCameraDepth;
@@ -48,6 +49,7 @@ public class LevelViewCameraControllerEditor : Editor
         invertMouseY = serializedObject.FindProperty("invertMouseY");
         gravity = serializedObject.FindProperty("gravity");
         useCollision = serializedObject.FindProperty("useCollision");
+        collisionMask = serializedObject.FindProperty("collisionMask");
         activateOnPlay = serializedObject.FindProperty("activateOnPlay");
         disableOtherCamerasOnActivate = serializedObject.FindProperty("disableOtherCamerasOnActivate");
         activeCameraDepth = serializedObject.FindProperty("activeCameraDepth");
@@ -163,6 +165,7 @@ public class LevelViewCameraControllerEditor : Editor
         EditorGUILayout.Space(6f);
         EditorGUILayout.LabelField("Collision", EditorStyles.boldLabel);
         EditorGUILayout.PropertyField(useCollision, new GUIContent("Use Collision"));
+        EditorGUILayout.PropertyField(collisionMask, new GUIContent("Collision Mask"));
     }
 
     private void DrawPlayCameraSection()

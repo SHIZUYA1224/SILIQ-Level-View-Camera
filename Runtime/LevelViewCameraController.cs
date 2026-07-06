@@ -25,6 +25,11 @@ public class LevelViewCameraController : MonoBehaviour
     private const float EyeOffsetFromTop = 0.1f;
     private const float DefaultCrouchBodyHeightRatio = 0.75f;
     private const float DefaultInputSystemMouseScale = 0.03f;
+    private const float CollisionSkinWidth = 0.03f;
+    private const float GroundCheckDistance = 0.08f;
+    private const int MaxCollisionSlideIterations = 3;
+    private const int MaxOverlapResolveIterations = 3;
+    private const int MaxPhysicsHits = 16;
     private const float MinBodyHeight = 0.4f;
     private const float MinEyeHeight = 0.2f;
 
@@ -45,6 +50,7 @@ public class LevelViewCameraController : MonoBehaviour
     public bool activateOnPlay;
     public bool disableOtherCamerasOnActivate = true;
     [Min(0f)] public float activeCameraDepth = 1000f;
+    public LayerMask collisionMask = ~0;
     public bool showGizmos = true;
 
     private static readonly List<CameraState> StoredCameraStates = new List<CameraState>();
@@ -64,6 +70,8 @@ public class LevelViewCameraController : MonoBehaviour
     private float currentSpeed;
     private bool isGrounded;
     private bool isMouseLocked;
+    private readonly RaycastHit[] castHits = new RaycastHit[MaxPhysicsHits];
+    private readonly Collider[] overlapColliders = new Collider[MaxPhysicsHits];
 
 #if !ENABLE_LEGACY_INPUT_MANAGER && ENABLE_INPUT_SYSTEM
     private static bool inputSystemReflectionInitialized;
@@ -311,10 +319,7 @@ public class LevelViewCameraController : MonoBehaviour
         currentSpeed = 0f;
         verticalVelocity = 0f;
 
-        if (useCollision)
-        {
-            EnsureCharacterController();
-        }
+        DisableCollisionControllers();
 
         ApplyViewRotation();
         SetMouseLock(true);
@@ -322,13 +327,13 @@ public class LevelViewCameraController : MonoBehaviour
 
     private void UpdateCollisionMovement()
     {
-        EnsureCharacterController();
+        DisableCollisionControllers();
 
         float targetBodyHeight = ReadCrouchHeld() ? crouchBodyHeight : bodyHeight;
         ApplyBodyHeight(targetBodyHeight);
         ApplyCharacterControllerSettings(currentBodyHeight);
 
-        isGrounded = characterController.isGrounded;
+        isGrounded = CheckGrounded();
         if (isGrounded && verticalVelocity < 0f)
         {
             verticalVelocity = -2f;
@@ -346,8 +351,8 @@ public class LevelViewCameraController : MonoBehaviour
         Vector3 velocity = horizontalMove * targetSpeed;
         velocity.y = verticalVelocity;
 
-        CollisionFlags flags = characterController.Move(velocity * Time.deltaTime);
-        isGrounded = characterController.isGrounded || (flags & CollisionFlags.Below) != 0;
+        MoveWithPhysicsCapsule(velocity * Time.deltaTime);
+        isGrounded = CheckGrounded();
         currentSpeed = new Vector3(velocity.x, 0f, velocity.z).magnitude;
     }
 
@@ -378,26 +383,6 @@ public class LevelViewCameraController : MonoBehaviour
         currentSpeed = velocity.magnitude;
     }
 
-    private void EnsureCharacterController()
-    {
-        if (characterController == null)
-        {
-            characterController = GetComponent<CharacterController>();
-        }
-
-        if (characterController == null)
-        {
-            characterController = gameObject.AddComponent<CharacterController>();
-        }
-
-        if (!characterController.enabled)
-        {
-            characterController.enabled = true;
-        }
-
-        ApplyCharacterControllerSettings(CurrentBodyHeight);
-    }
-
     private Camera GetControlledCamera()
     {
         if (controlledCamera == null)
@@ -408,8 +393,18 @@ public class LevelViewCameraController : MonoBehaviour
         return controlledCamera;
     }
 
+    private void CacheCharacterController()
+    {
+        if (characterController == null)
+        {
+            characterController = GetComponent<CharacterController>();
+        }
+    }
+
     private void DisableCollisionControllers()
     {
+        CacheCharacterController();
+
         if (characterController != null && characterController.enabled)
         {
             characterController.enabled = false;
@@ -418,6 +413,8 @@ public class LevelViewCameraController : MonoBehaviour
 
     private void ApplyCharacterControllerSettings(float activeBodyHeight)
     {
+        CacheCharacterController();
+
         if (characterController == null)
         {
             return;
@@ -427,6 +424,224 @@ public class LevelViewCameraController : MonoBehaviour
         characterController.height = capsuleHeight;
         characterController.radius = ControllerRadius;
         characterController.center = new Vector3(0f, (capsuleHeight * 0.5f) - CurrentEyeHeight, 0f);
+    }
+
+    private void MoveWithPhysicsCapsule(Vector3 displacement)
+    {
+        ResolveBodyOverlaps();
+
+        Vector3 remaining = displacement;
+
+        for (int i = 0; i < MaxCollisionSlideIterations; i++)
+        {
+            float distance = remaining.magnitude;
+            if (distance <= 0.0001f)
+            {
+                ResolveBodyOverlaps();
+                return;
+            }
+
+            Vector3 direction = remaining / distance;
+            RaycastHit hit;
+            if (!CastBody(direction, distance + CollisionSkinWidth, out hit))
+            {
+                transform.position += remaining;
+                ResolveBodyOverlaps();
+                return;
+            }
+
+            float moveDistance = Mathf.Max(hit.distance - CollisionSkinWidth, 0f);
+            transform.position += direction * moveDistance;
+
+            Vector3 leftover = remaining - (direction * moveDistance);
+            remaining = Vector3.ProjectOnPlane(leftover, hit.normal);
+
+            if (Vector3.Dot(hit.normal, Vector3.up) > 0.65f && remaining.y < 0f)
+            {
+                remaining.y = 0f;
+            }
+
+            ResolveBodyOverlaps();
+        }
+
+        ResolveBodyOverlaps();
+    }
+
+    private bool CastBody(Vector3 direction, float distance, out RaycastHit hit)
+    {
+        hit = default(RaycastHit);
+        if (direction.sqrMagnitude <= 0.0001f || distance <= 0f)
+        {
+            return false;
+        }
+
+        direction.Normalize();
+
+        Vector3 bottom;
+        Vector3 top;
+        GetBodyCapsulePoints(transform.position, currentBodyHeight, currentEyeHeight, out bottom, out top);
+
+        int hitCount = Physics.CapsuleCastNonAlloc(
+            bottom,
+            top,
+            ControllerRadius,
+            direction,
+            castHits,
+            distance,
+            collisionMask,
+            QueryTriggerInteraction.Ignore);
+
+        int closestHitIndex = -1;
+        float closestDistance = float.PositiveInfinity;
+        for (int i = 0; i < hitCount; i++)
+        {
+            Collider hitCollider = castHits[i].collider;
+            if (hitCollider == null || IsSelfCollider(hitCollider))
+            {
+                continue;
+            }
+
+            if (castHits[i].distance < closestDistance)
+            {
+                closestDistance = castHits[i].distance;
+                closestHitIndex = i;
+            }
+        }
+
+        if (closestHitIndex < 0)
+        {
+            return false;
+        }
+
+        hit = castHits[closestHitIndex];
+        return true;
+    }
+
+    private bool CheckGrounded()
+    {
+        RaycastHit hit;
+        return CastBody(Vector3.down, GroundCheckDistance, out hit) && Vector3.Dot(hit.normal, Vector3.up) > 0.5f;
+    }
+
+    private void GetBodyCapsulePoints(Vector3 eyePosition, float activeBodyHeight, float activeEyeHeight, out Vector3 bottom, out Vector3 top)
+    {
+        float capsuleHeight = Mathf.Max(activeBodyHeight, ControllerRadius * 2f + 0.01f);
+        Vector3 footPosition = GetFootPosition(eyePosition, activeEyeHeight);
+        bottom = footPosition + Vector3.up * ControllerRadius;
+        top = footPosition + Vector3.up * (capsuleHeight - ControllerRadius);
+    }
+
+    private void ResolveBodyOverlaps()
+    {
+        for (int iteration = 0; iteration < MaxOverlapResolveIterations; iteration++)
+        {
+            Vector3 bottom;
+            Vector3 top;
+            GetBodyCapsulePoints(transform.position, currentBodyHeight, currentEyeHeight, out bottom, out top);
+
+            int overlapCount = Physics.OverlapCapsuleNonAlloc(
+                bottom,
+                top,
+                ControllerRadius,
+                overlapColliders,
+                collisionMask,
+                QueryTriggerInteraction.Ignore);
+
+            Vector3 bestCorrection = Vector3.zero;
+            float bestDepth = 0f;
+            for (int i = 0; i < overlapCount; i++)
+            {
+                Collider overlapCollider = overlapColliders[i];
+                if (overlapCollider == null || IsSelfCollider(overlapCollider))
+                {
+                    overlapColliders[i] = null;
+                    continue;
+                }
+
+                Vector3 correction;
+                float depth;
+                if (TryGetCapsuleOverlapCorrection(overlapCollider, bottom, top, out correction, out depth) && depth > bestDepth)
+                {
+                    bestCorrection = correction;
+                    bestDepth = depth;
+                }
+
+                overlapColliders[i] = null;
+            }
+
+            if (bestDepth <= 0.0001f)
+            {
+                return;
+            }
+
+            transform.position += bestCorrection;
+        }
+    }
+
+    private bool TryGetCapsuleOverlapCorrection(Collider overlapCollider, Vector3 bottom, Vector3 top, out Vector3 correction, out float depth)
+    {
+        correction = Vector3.zero;
+        depth = 0f;
+
+        Vector3 middle = (bottom + top) * 0.5f;
+        EvaluateOverlapProbe(overlapCollider, bottom, bottom, top, ref correction, ref depth);
+        EvaluateOverlapProbe(overlapCollider, middle, bottom, top, ref correction, ref depth);
+        EvaluateOverlapProbe(overlapCollider, top, bottom, top, ref correction, ref depth);
+
+        return depth > 0.0001f;
+    }
+
+    private void EvaluateOverlapProbe(Collider overlapCollider, Vector3 probe, Vector3 bottom, Vector3 top, ref Vector3 correction, ref float depth)
+    {
+        Vector3 colliderPoint = overlapCollider.ClosestPoint(probe);
+        Vector3 capsulePoint = ClosestPointOnSegment(bottom, top, colliderPoint);
+        Vector3 separation = capsulePoint - colliderPoint;
+        float distance = separation.magnitude;
+        float penetrationDepth = ControllerRadius - distance;
+
+        if (penetrationDepth <= depth)
+        {
+            return;
+        }
+
+        Vector3 direction;
+        if (distance > 0.0001f)
+        {
+            direction = separation / distance;
+        }
+        else
+        {
+            direction = capsulePoint - overlapCollider.bounds.center;
+            if (direction.sqrMagnitude <= 0.0001f)
+            {
+                direction = Vector3.up;
+            }
+            else
+            {
+                direction.Normalize();
+            }
+        }
+
+        depth = penetrationDepth + 0.001f;
+        correction = direction * depth;
+    }
+
+    private Vector3 ClosestPointOnSegment(Vector3 segmentStart, Vector3 segmentEnd, Vector3 point)
+    {
+        Vector3 segment = segmentEnd - segmentStart;
+        float lengthSqr = segment.sqrMagnitude;
+        if (lengthSqr <= 0.0001f)
+        {
+            return segmentStart;
+        }
+
+        float t = Vector3.Dot(point - segmentStart, segment) / lengthSqr;
+        return segmentStart + segment * Mathf.Clamp01(t);
+    }
+
+    private bool IsSelfCollider(Collider candidate)
+    {
+        return candidate != null && candidate.transform != null && candidate.transform.IsChildOf(transform);
     }
 
     private void ApplyBodyHeight(float targetBodyHeight)
@@ -497,11 +712,7 @@ public class LevelViewCameraController : MonoBehaviour
             return;
         }
 
-        bool wasControllerEnabled = characterController != null && characterController.enabled;
-        if (wasControllerEnabled)
-        {
-            characterController.enabled = false;
-        }
+        DisableCollisionControllers();
 
         ExtractYawPitch(initialRotation);
         currentBodyHeight = bodyHeight;
@@ -512,11 +723,8 @@ public class LevelViewCameraController : MonoBehaviour
         verticalVelocity = 0f;
         currentSpeed = 0f;
 
-        if (wasControllerEnabled)
-        {
-            characterController.enabled = true;
-            ApplyCharacterControllerSettings(currentBodyHeight);
-        }
+        ApplyCharacterControllerSettings(currentBodyHeight);
+        DisableCollisionControllers();
     }
 
     private void ExtractYawPitch(Quaternion rotation)
