@@ -28,6 +28,9 @@ public class LevelViewCameraControllerEditor : Editor
     private SerializedProperty invertMouseY;
     private SerializedProperty gravity;
     private SerializedProperty useCollision;
+    private SerializedProperty activateOnPlay;
+    private SerializedProperty disableOtherCamerasOnActivate;
+    private SerializedProperty activeCameraDepth;
     private SerializedProperty showGizmos;
 
     private void OnEnable()
@@ -45,6 +48,9 @@ public class LevelViewCameraControllerEditor : Editor
         invertMouseY = serializedObject.FindProperty("invertMouseY");
         gravity = serializedObject.FindProperty("gravity");
         useCollision = serializedObject.FindProperty("useCollision");
+        activateOnPlay = serializedObject.FindProperty("activateOnPlay");
+        disableOtherCamerasOnActivate = serializedObject.FindProperty("disableOtherCamerasOnActivate");
+        activeCameraDepth = serializedObject.FindProperty("activeCameraDepth");
         showGizmos = serializedObject.FindProperty("showGizmos");
     }
 
@@ -56,6 +62,7 @@ public class LevelViewCameraControllerEditor : Editor
         DrawBodyHeightSection();
         DrawMovementSection();
         DrawCollisionSection();
+        DrawPlayCameraSection();
         DrawGizmoSection();
         DrawEditorNavigationSection();
         DrawCurrentStatusSection();
@@ -158,6 +165,40 @@ public class LevelViewCameraControllerEditor : Editor
         EditorGUILayout.PropertyField(useCollision, new GUIContent("Use Collision"));
     }
 
+    private void DrawPlayCameraSection()
+    {
+        EditorGUILayout.Space(6f);
+        EditorGUILayout.LabelField("Play Game View", EditorStyles.boldLabel);
+        EditorGUILayout.PropertyField(activateOnPlay, new GUIContent("Activate On Play"));
+        EditorGUILayout.PropertyField(disableOtherCamerasOnActivate, new GUIContent("Disable Other Cameras"));
+        EditorGUILayout.PropertyField(activeCameraDepth, new GUIContent("Active Camera Depth"));
+
+        LevelViewCameraController controller = target as LevelViewCameraController;
+        if (controller == null)
+        {
+            return;
+        }
+
+        using (new EditorGUI.DisabledScope(!Application.isPlaying))
+        {
+            if (GUILayout.Button("Switch Game View To This Camera"))
+            {
+                serializedObject.ApplyModifiedProperties();
+                controller.ActivatePlayCamera();
+            }
+
+            if (GUILayout.Button("Restore Previous Game Cameras"))
+            {
+                LevelViewCameraController.RestorePlayCameraStates();
+            }
+        }
+
+        if (!Application.isPlaying)
+        {
+            EditorGUILayout.HelpBox("Game View switching is available in Play Mode.", MessageType.Info);
+        }
+    }
+
     private void DrawGizmoSection()
     {
         EditorGUILayout.Space(6f);
@@ -206,6 +247,7 @@ public class LevelViewCameraControllerEditor : Editor
             EditorGUILayout.TextField("Current Eye Height", FormatMeters(controller.CurrentEyeHeight));
             EditorGUILayout.TextField("Current Collider Height", FormatMeters(controller.CurrentBodyHeight));
             EditorGUILayout.TextField("Collision Mode", controller.CollisionMode);
+            EditorGUILayout.TextField("Active Play Camera", controller.IsActivePlayCamera ? "Yes" : "No");
             EditorGUILayout.TextField("Is Grounded", controller.IsGrounded ? "Yes" : "No");
             EditorGUILayout.TextField("Current Speed", FormatSpeed(controller.CurrentSpeed));
             EditorGUILayout.TextField("Initial Position", FormatVector3(controller.InitialPosition));
@@ -262,6 +304,34 @@ public class LevelViewCameraControllerEditor : Editor
     private static bool ValidateMoveSelectedControllerToSceneView()
     {
         return GetSelectedController() != null && GetSceneView() != null;
+    }
+
+    [MenuItem("Tools/SILIQ/Level View Camera/Switch Game View To Selected Camera", false, 2010)]
+    private static void SwitchGameViewToSelectedController()
+    {
+        LevelViewCameraController controller = GetSelectedController();
+        if (controller != null)
+        {
+            controller.ActivatePlayCamera();
+        }
+    }
+
+    [MenuItem("Tools/SILIQ/Level View Camera/Switch Game View To Selected Camera", true)]
+    private static bool ValidateSwitchGameViewToSelectedController()
+    {
+        return Application.isPlaying && GetSelectedController() != null;
+    }
+
+    [MenuItem("Tools/SILIQ/Level View Camera/Restore Previous Game Cameras", false, 2011)]
+    private static void RestorePreviousGameCameras()
+    {
+        LevelViewCameraController.RestorePlayCameraStates();
+    }
+
+    [MenuItem("Tools/SILIQ/Level View Camera/Restore Previous Game Cameras", true)]
+    private static bool ValidateRestorePreviousGameCameras()
+    {
+        return Application.isPlaying && LevelViewCameraController.HasStoredPlayCameraState;
     }
 
     private static LevelViewCameraController GetSelectedController()

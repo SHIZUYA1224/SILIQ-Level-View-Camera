@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
 
@@ -41,8 +42,16 @@ public class LevelViewCameraController : MonoBehaviour
     public bool invertMouseY;
     [Min(0.01f)] public float gravity = 9.81f;
     public bool useCollision = true;
+    public bool activateOnPlay;
+    public bool disableOtherCamerasOnActivate = true;
+    [Min(0f)] public float activeCameraDepth = 1000f;
     public bool showGizmos = true;
 
+    private static readonly List<CameraState> StoredCameraStates = new List<CameraState>();
+    private static bool hasStoredCameraStates;
+    private static LevelViewCameraController activePlayCameraController;
+
+    private Camera controlledCamera;
     private CharacterController characterController;
     private Vector3 initialPosition;
     private Quaternion initialRotation;
@@ -104,6 +113,16 @@ public class LevelViewCameraController : MonoBehaviour
         get { return useCollision ? "Collision ON" : "Collision OFF"; }
     }
 
+    public bool IsActivePlayCamera
+    {
+        get { return activePlayCameraController == this; }
+    }
+
+    public static bool HasStoredPlayCameraState
+    {
+        get { return hasStoredCameraStates; }
+    }
+
     public static float GetPresetBodyHeight(HeightPreset preset)
     {
         switch (preset)
@@ -149,6 +168,60 @@ public class LevelViewCameraController : MonoBehaviour
         ClampSettings();
     }
 
+    public void ActivatePlayCamera()
+    {
+        if (!Application.isPlaying)
+        {
+            return;
+        }
+
+        Camera cameraToActivate = GetControlledCamera();
+        if (cameraToActivate == null)
+        {
+            return;
+        }
+
+        if (!hasStoredCameraStates)
+        {
+            StorePlayCameraStates();
+        }
+
+        if (disableOtherCamerasOnActivate)
+        {
+            Camera[] sceneCameras = GetSceneCameras();
+            for (int i = 0; i < sceneCameras.Length; i++)
+            {
+                Camera sceneCamera = sceneCameras[i];
+                if (sceneCamera != null && sceneCamera != cameraToActivate)
+                {
+                    sceneCamera.enabled = false;
+                }
+            }
+        }
+
+        cameraToActivate.enabled = true;
+        cameraToActivate.depth = activeCameraDepth;
+        cameraToActivate.targetDisplay = 0;
+        activePlayCameraController = this;
+    }
+
+    public static void RestorePlayCameraStates()
+    {
+        if (!Application.isPlaying || !hasStoredCameraStates)
+        {
+            return;
+        }
+
+        for (int i = 0; i < StoredCameraStates.Count; i++)
+        {
+            StoredCameraStates[i].Restore();
+        }
+
+        StoredCameraStates.Clear();
+        hasStoredCameraStates = false;
+        activePlayCameraController = null;
+    }
+
     private void Awake()
     {
         if (!Application.isPlaying)
@@ -157,6 +230,11 @@ public class LevelViewCameraController : MonoBehaviour
         }
 
         InitializeRuntimeState();
+
+        if (activateOnPlay)
+        {
+            ActivatePlayCamera();
+        }
     }
 
     private void OnDisable()
@@ -164,6 +242,11 @@ public class LevelViewCameraController : MonoBehaviour
         if (Application.isPlaying && isMouseLocked)
         {
             SetMouseLock(false);
+        }
+
+        if (Application.isPlaying && activePlayCameraController == this)
+        {
+            RestorePlayCameraStates();
         }
     }
 
@@ -313,6 +396,16 @@ public class LevelViewCameraController : MonoBehaviour
         }
 
         ApplyCharacterControllerSettings(CurrentBodyHeight);
+    }
+
+    private Camera GetControlledCamera()
+    {
+        if (controlledCamera == null)
+        {
+            controlledCamera = GetComponent<Camera>();
+        }
+
+        return controlledCamera;
     }
 
     private void DisableCollisionControllers()
@@ -465,7 +558,72 @@ public class LevelViewCameraController : MonoBehaviour
         jumpHeight = Mathf.Max(0f, jumpHeight);
         mouseSensitivity = Mathf.Max(0.01f, mouseSensitivity);
         inputSystemMouseScale = inputSystemMouseScale > 0f ? Mathf.Max(0.001f, inputSystemMouseScale) : DefaultInputSystemMouseScale;
+        activeCameraDepth = Mathf.Max(0f, activeCameraDepth);
         gravity = Mathf.Max(0.01f, gravity);
+    }
+
+    private static void StorePlayCameraStates()
+    {
+        StoredCameraStates.Clear();
+
+        Camera[] sceneCameras = GetSceneCameras();
+        for (int i = 0; i < sceneCameras.Length; i++)
+        {
+            Camera sceneCamera = sceneCameras[i];
+            if (sceneCamera != null)
+            {
+                StoredCameraStates.Add(new CameraState(sceneCamera));
+            }
+        }
+
+        hasStoredCameraStates = true;
+    }
+
+    private static Camera[] GetSceneCameras()
+    {
+        Camera[] cameras = Resources.FindObjectsOfTypeAll<Camera>();
+        List<Camera> sceneCameras = new List<Camera>(cameras.Length);
+
+        for (int i = 0; i < cameras.Length; i++)
+        {
+            Camera sceneCamera = cameras[i];
+            if (sceneCamera == null || !sceneCamera.gameObject.scene.IsValid())
+            {
+                continue;
+            }
+
+            sceneCameras.Add(sceneCamera);
+        }
+
+        return sceneCameras.ToArray();
+    }
+
+    private struct CameraState
+    {
+        private readonly Camera camera;
+        private readonly bool enabled;
+        private readonly float depth;
+        private readonly int targetDisplay;
+
+        public CameraState(Camera sourceCamera)
+        {
+            camera = sourceCamera;
+            enabled = sourceCamera.enabled;
+            depth = sourceCamera.depth;
+            targetDisplay = sourceCamera.targetDisplay;
+        }
+
+        public void Restore()
+        {
+            if (camera == null)
+            {
+                return;
+            }
+
+            camera.enabled = enabled;
+            camera.depth = depth;
+            camera.targetDisplay = targetDisplay;
+        }
     }
 
     private Vector2 ReadMoveInput()
