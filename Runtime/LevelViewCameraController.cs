@@ -19,13 +19,17 @@ public class LevelViewCameraController : MonoBehaviour
     }
 
     private const float ControllerRadius = 0.3f;
-    private const float ControllerHeightPadding = 0.2f;
+    private const float EyeOffsetFromTop = 0.1f;
+    private const float DefaultCrouchBodyHeightRatio = 0.75f;
+    private const float MinBodyHeight = 0.4f;
     private const float MinEyeHeight = 0.2f;
 
     [SerializeField] private HeightPreset heightPreset = HeightPreset.AverageVRChatAvatar;
 
-    [Min(MinEyeHeight)] public float eyeHeight = 1.6f;
-    [Min(MinEyeHeight)] public float crouchEyeHeight = 1.2f;
+    [Min(MinBodyHeight)] public float bodyHeight = 1.7f;
+    [Min(MinBodyHeight)] public float crouchBodyHeight = 1.3f;
+    [HideInInspector] public float eyeHeight = 1.6f;
+    [HideInInspector] public float crouchEyeHeight = 1.2f;
     [Min(0f)] public float walkSpeed = 2.0f;
     [Min(0f)] public float sprintSpeed = 4.0f;
     [Min(0f)] public float jumpHeight = 0.5f;
@@ -43,6 +47,7 @@ public class LevelViewCameraController : MonoBehaviour
     private float yaw;
     private float pitch;
     private float verticalVelocity;
+    private float currentBodyHeight;
     private float currentEyeHeight;
     private float currentSpeed;
     private bool isGrounded;
@@ -61,6 +66,11 @@ public class LevelViewCameraController : MonoBehaviour
     public float CurrentEyeHeight
     {
         get { return Application.isPlaying ? currentEyeHeight : eyeHeight; }
+    }
+
+    public float CurrentBodyHeight
+    {
+        get { return Application.isPlaying ? currentBodyHeight : bodyHeight; }
     }
 
     public bool IsGrounded
@@ -83,31 +93,46 @@ public class LevelViewCameraController : MonoBehaviour
         get { return useCollision ? "Collision ON" : "Collision OFF"; }
     }
 
-    public static float GetPresetHeight(HeightPreset preset)
+    public static float GetPresetBodyHeight(HeightPreset preset)
     {
         switch (preset)
         {
             case HeightPreset.SmallAvatar:
-                return 1.00f;
+                return 1.10f;
             case HeightPreset.Seated:
-                return 1.20f;
+                return 1.30f;
             case HeightPreset.ShortAvatar:
-                return 1.40f;
+                return 1.50f;
             case HeightPreset.AverageVRChatAvatar:
-                return 1.60f;
+                return 1.70f;
             case HeightPreset.TallAvatar:
-                return 1.80f;
+                return 1.90f;
             case HeightPreset.Custom:
             default:
-                return 1.60f;
+                return 1.70f;
         }
+    }
+
+    public static float GetPresetHeight(HeightPreset preset)
+    {
+        return GetPresetBodyHeight(preset);
+    }
+
+    public static float CalculateEyeHeight(float sourceBodyHeight)
+    {
+        return Mathf.Max(MinEyeHeight, sourceBodyHeight - EyeOffsetFromTop);
+    }
+
+    public static float CalculateDefaultCrouchBodyHeight(float sourceBodyHeight)
+    {
+        return Mathf.Max(MinBodyHeight, sourceBodyHeight * DefaultCrouchBodyHeightRatio);
     }
 
     public void ApplyHeightPreset()
     {
         if (heightPreset != HeightPreset.Custom)
         {
-            eyeHeight = GetPresetHeight(heightPreset);
+            bodyHeight = GetPresetBodyHeight(heightPreset);
         }
 
         ClampSettings();
@@ -138,7 +163,8 @@ public class LevelViewCameraController : MonoBehaviour
         if (Application.isPlaying)
         {
             currentEyeHeight = Mathf.Max(currentEyeHeight, MinEyeHeight);
-            ApplyCharacterControllerSettings(CurrentEyeHeight);
+            currentBodyHeight = Mathf.Max(currentBodyHeight, MinBodyHeight);
+            ApplyCharacterControllerSettings(CurrentBodyHeight);
         }
     }
 
@@ -186,6 +212,7 @@ public class LevelViewCameraController : MonoBehaviour
         hasInitialState = true;
 
         ExtractYawPitch(initialRotation);
+        currentBodyHeight = bodyHeight;
         currentEyeHeight = eyeHeight;
         currentSpeed = 0f;
         verticalVelocity = 0f;
@@ -204,9 +231,9 @@ public class LevelViewCameraController : MonoBehaviour
     {
         EnsureCharacterController();
 
-        float targetEyeHeight = ReadCrouchHeld() ? crouchEyeHeight : eyeHeight;
-        ApplyEyeHeight(targetEyeHeight);
-        ApplyCharacterControllerSettings(currentEyeHeight);
+        float targetBodyHeight = ReadCrouchHeld() ? crouchBodyHeight : bodyHeight;
+        ApplyBodyHeight(targetBodyHeight);
+        ApplyCharacterControllerSettings(currentBodyHeight);
 
         isGrounded = characterController.isGrounded;
         if (isGrounded && verticalVelocity < 0f)
@@ -234,7 +261,7 @@ public class LevelViewCameraController : MonoBehaviour
     private void UpdateFreeMovement()
     {
         DisableCollisionControllers();
-        ApplyEyeHeight(eyeHeight);
+        ApplyBodyHeight(bodyHeight);
 
         isGrounded = false;
         verticalVelocity = 0f;
@@ -285,7 +312,7 @@ public class LevelViewCameraController : MonoBehaviour
             characterController.enabled = true;
         }
 
-        ApplyCharacterControllerSettings(CurrentEyeHeight);
+        ApplyCharacterControllerSettings(CurrentBodyHeight);
     }
 
     private void CreateRuntimeRig()
@@ -323,24 +350,26 @@ public class LevelViewCameraController : MonoBehaviour
         }
     }
 
-    private void ApplyCharacterControllerSettings(float activeEyeHeight)
+    private void ApplyCharacterControllerSettings(float activeBodyHeight)
     {
         if (characterController == null)
         {
             return;
         }
 
-        float capsuleHeight = Mathf.Max(activeEyeHeight + ControllerHeightPadding, ControllerRadius * 2f + 0.01f);
+        float capsuleHeight = Mathf.Max(activeBodyHeight, ControllerRadius * 2f + 0.01f);
         characterController.height = capsuleHeight;
         characterController.radius = ControllerRadius;
         characterController.center = new Vector3(0f, capsuleHeight * 0.5f, 0f);
     }
 
-    private void ApplyEyeHeight(float targetEyeHeight)
+    private void ApplyBodyHeight(float targetBodyHeight)
     {
-        targetEyeHeight = Mathf.Max(MinEyeHeight, targetEyeHeight);
+        targetBodyHeight = Mathf.Max(MinBodyHeight, targetBodyHeight);
+        float targetEyeHeight = CalculateEyeHeight(targetBodyHeight);
         if (Mathf.Approximately(currentEyeHeight, targetEyeHeight))
         {
+            currentBodyHeight = targetBodyHeight;
             currentEyeHeight = targetEyeHeight;
             return;
         }
@@ -355,6 +384,7 @@ public class LevelViewCameraController : MonoBehaviour
             transform.position = footPosition + Vector3.up * targetEyeHeight;
         }
 
+        currentBodyHeight = targetBodyHeight;
         currentEyeHeight = targetEyeHeight;
     }
 
@@ -434,6 +464,7 @@ public class LevelViewCameraController : MonoBehaviour
         }
 
         ExtractYawPitch(initialRotation);
+        currentBodyHeight = bodyHeight;
         currentEyeHeight = eyeHeight;
 
         if (movementRoot != null && movementRoot != transform)
@@ -453,7 +484,7 @@ public class LevelViewCameraController : MonoBehaviour
         if (wasControllerEnabled)
         {
             characterController.enabled = true;
-            ApplyCharacterControllerSettings(currentEyeHeight);
+            ApplyCharacterControllerSettings(currentBodyHeight);
         }
     }
 
@@ -487,8 +518,10 @@ public class LevelViewCameraController : MonoBehaviour
 
     private void ClampSettings()
     {
-        eyeHeight = Mathf.Max(MinEyeHeight, eyeHeight);
-        crouchEyeHeight = Mathf.Clamp(crouchEyeHeight, MinEyeHeight, eyeHeight);
+        bodyHeight = Mathf.Max(MinBodyHeight, bodyHeight);
+        crouchBodyHeight = Mathf.Clamp(crouchBodyHeight, MinBodyHeight, bodyHeight);
+        eyeHeight = CalculateEyeHeight(bodyHeight);
+        crouchEyeHeight = CalculateEyeHeight(crouchBodyHeight);
         walkSpeed = Mathf.Max(0f, walkSpeed);
         sprintSpeed = Mathf.Max(walkSpeed, sprintSpeed);
         jumpHeight = Mathf.Max(0f, jumpHeight);
@@ -549,6 +582,7 @@ public class LevelViewCameraController : MonoBehaviour
             return;
         }
 
+        float displayBodyHeight = Mathf.Max(MinBodyHeight, Application.isPlaying ? CurrentBodyHeight : bodyHeight);
         float displayEyeHeight = Mathf.Max(MinEyeHeight, Application.isPlaying ? CurrentEyeHeight : eyeHeight);
         Vector3 footPosition = GetFootPosition(transform.position, displayEyeHeight);
         Vector3 eyePosition = footPosition + Vector3.up * displayEyeHeight;
@@ -561,8 +595,8 @@ public class LevelViewCameraController : MonoBehaviour
         DrawEyeHeight(footPosition, eyePosition);
         DrawFootPosition(footPosition);
         DrawForwardDirection(eyePosition, forward);
-        DrawCharacterControllerCapsule(footPosition, displayEyeHeight + ControllerHeightPadding);
-        DrawHeightLabel(eyePosition, displayEyeHeight);
+        DrawCharacterControllerCapsule(footPosition, displayBodyHeight);
+        DrawHeightLabel(eyePosition, displayBodyHeight, displayEyeHeight);
     }
 
     private void DrawEyeHeight(Vector3 footPosition, Vector3 eyePosition)
@@ -615,11 +649,11 @@ public class LevelViewCameraController : MonoBehaviour
         Handles.DrawLine(bottomSphere - Vector3.forward * ControllerRadius, topSphere - Vector3.forward * ControllerRadius);
     }
 
-    private void DrawHeightLabel(Vector3 eyePosition, float displayEyeHeight)
+    private void DrawHeightLabel(Vector3 eyePosition, float displayBodyHeight, float displayEyeHeight)
     {
         GUIStyle labelStyle = new GUIStyle(EditorStyles.boldLabel);
         labelStyle.normal.textColor = Color.white;
-        Handles.Label(eyePosition + Vector3.up * 0.12f, string.Format("{0:0.00} m", displayEyeHeight), labelStyle);
+        Handles.Label(eyePosition + Vector3.up * 0.12f, string.Format("Body {0:0.00} m / Eye {1:0.00} m", displayBodyHeight, displayEyeHeight), labelStyle);
     }
 #endif
 }

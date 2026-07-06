@@ -7,15 +7,17 @@ public class LevelViewCameraControllerEditor : Editor
 {
     private static readonly GUIContent[] PresetLabels =
     {
-        new GUIContent("Small Avatar: 1.00m"),
-        new GUIContent("Seated: 1.20m"),
-        new GUIContent("Short Avatar: 1.40m"),
-        new GUIContent("Average VRChat Avatar: 1.60m"),
-        new GUIContent("Tall Avatar: 1.80m"),
+        new GUIContent("Small Avatar: 1.10m body"),
+        new GUIContent("Seated: 1.30m body"),
+        new GUIContent("Short Avatar: 1.50m body"),
+        new GUIContent("Average VRChat Avatar: 1.70m body"),
+        new GUIContent("Tall Avatar: 1.90m body"),
         new GUIContent("Custom")
     };
 
     private SerializedProperty heightPreset;
+    private SerializedProperty bodyHeight;
+    private SerializedProperty crouchBodyHeight;
     private SerializedProperty eyeHeight;
     private SerializedProperty crouchEyeHeight;
     private SerializedProperty walkSpeed;
@@ -29,6 +31,8 @@ public class LevelViewCameraControllerEditor : Editor
     private void OnEnable()
     {
         heightPreset = serializedObject.FindProperty("heightPreset");
+        bodyHeight = serializedObject.FindProperty("bodyHeight");
+        crouchBodyHeight = serializedObject.FindProperty("crouchBodyHeight");
         eyeHeight = serializedObject.FindProperty("eyeHeight");
         crouchEyeHeight = serializedObject.FindProperty("crouchEyeHeight");
         walkSpeed = serializedObject.FindProperty("walkSpeed");
@@ -45,7 +49,7 @@ public class LevelViewCameraControllerEditor : Editor
         serializedObject.Update();
 
         DrawPresetSection();
-        DrawEyeHeightSection();
+        DrawBodyHeightSection();
         DrawMovementSection();
         DrawCollisionSection();
         DrawGizmoSection();
@@ -84,7 +88,10 @@ public class LevelViewCameraControllerEditor : Editor
                 LevelViewCameraController.HeightPreset preset = (LevelViewCameraController.HeightPreset)selectedIndex;
                 if (preset != LevelViewCameraController.HeightPreset.Custom)
                 {
-                    eyeHeight.floatValue = LevelViewCameraController.GetPresetHeight(preset);
+                    bodyHeight.floatValue = LevelViewCameraController.GetPresetBodyHeight(preset);
+                    crouchBodyHeight.floatValue = LevelViewCameraController.CalculateDefaultCrouchBodyHeight(bodyHeight.floatValue);
+                    eyeHeight.floatValue = LevelViewCameraController.CalculateEyeHeight(bodyHeight.floatValue);
+                    crouchEyeHeight.floatValue = LevelViewCameraController.CalculateEyeHeight(crouchBodyHeight.floatValue);
                 }
             }
         }
@@ -95,20 +102,32 @@ public class LevelViewCameraControllerEditor : Editor
         }
     }
 
-    private void DrawEyeHeightSection()
+    private void DrawBodyHeightSection()
     {
         EditorGUILayout.Space(6f);
-        EditorGUILayout.LabelField("Eye Height", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField("Body Height", EditorStyles.boldLabel);
 
         bool isCustom = !heightPreset.hasMultipleDifferentValues &&
             (LevelViewCameraController.HeightPreset)heightPreset.enumValueIndex == LevelViewCameraController.HeightPreset.Custom;
 
         using (new EditorGUI.DisabledScope(!isCustom))
         {
-            EditorGUILayout.PropertyField(eyeHeight, new GUIContent("Eye Height"));
+            EditorGUILayout.PropertyField(bodyHeight, new GUIContent("Body Height"));
         }
 
-        EditorGUILayout.PropertyField(crouchEyeHeight, new GUIContent("Crouch Eye Height"));
+        EditorGUILayout.PropertyField(crouchBodyHeight, new GUIContent("Crouch Body Height"));
+
+        float standingEyeHeight = LevelViewCameraController.CalculateEyeHeight(bodyHeight.floatValue);
+        float crouchingEyeHeight = LevelViewCameraController.CalculateEyeHeight(crouchBodyHeight.floatValue);
+
+        using (new EditorGUI.DisabledScope(true))
+        {
+            EditorGUILayout.TextField("Calculated Eye Height", FormatMeters(standingEyeHeight));
+            EditorGUILayout.TextField("Calculated Crouch Eye Height", FormatMeters(crouchingEyeHeight));
+        }
+
+        eyeHeight.floatValue = standingEyeHeight;
+        crouchEyeHeight.floatValue = crouchingEyeHeight;
     }
 
     private void DrawMovementSection()
@@ -149,7 +168,9 @@ public class LevelViewCameraControllerEditor : Editor
 
         using (new EditorGUI.DisabledScope(true))
         {
+            EditorGUILayout.TextField("Current Body Height", FormatMeters(controller.CurrentBodyHeight));
             EditorGUILayout.TextField("Current Eye Height", FormatMeters(controller.CurrentEyeHeight));
+            EditorGUILayout.TextField("Current Collider Height", FormatMeters(controller.CurrentBodyHeight));
             EditorGUILayout.TextField("Collision Mode", controller.CollisionMode);
             EditorGUILayout.TextField("Is Grounded", controller.IsGrounded ? "Yes" : "No");
             EditorGUILayout.TextField("Current Speed", FormatSpeed(controller.CurrentSpeed));
